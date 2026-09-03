@@ -34,10 +34,32 @@ process GATK4_GATHERPILEUPSUMMARIES {
     gatk --java-options "-Xmx${avail_mem}M -XX:-UsePerfData" \\
         GatherPileupSummaries \\
         ${input_list} \\
-        --O ${prefix}.pileups.table \\
+        --O ${prefix}.pileups.table.unsorted \\
         --sequence-dictionary ${dict} \\
         --tmp-dir . \\
         ${args}
+
+    # GatherPileupSummaries concatenates its --I inputs in the order given, with no re-sort.
+    # When the inputs come from scattered intervals that were merged out of genomic order
+    # (e.g. grouped in task-completion order rather than by position), the merged table can
+    # contain backward jumps in position. CalculateContamination's ContaminationSegmenter
+    # assumes genome-sorted input and builds segments off consecutive rows, so a backward
+    # jump crashes it with "Invalid interval". Re-sort the merged table's data rows here by
+    # (contig rank, position), using the .dict's authoritative @SQ order (not lexical
+    # chr1,chr10,chr2 sorting), so CalculateContamination always gets a sorted table
+    # regardless of how the merge assembled it. The two header lines (#<METADATA>... and the
+    # column header) are preserved as-is.
+    awk 'BEGIN { FS=OFS="\\t" } /^@SQ/ { n = split(\$0, a, "\\t"); for (i = 1; i <= n; i++) { if (a[i] ~ /^SN:/) { print substr(a[i], 4), ++r } } }' ${dict} > contig_order.tsv
+
+    {
+        head -n 2 ${prefix}.pileups.table.unsorted
+        tail -n +3 ${prefix}.pileups.table.unsorted \\
+            | awk -v OFS='\\t' 'NR == FNR { rank[\$1] = \$2; next } { r = (\$1 in rank) ? rank[\$1] : 999999; print r, \$2, \$0 }' contig_order.tsv - \\
+            | sort -k1,1n -k2,2n -s \\
+            | cut -f3-
+    } > ${prefix}.pileups.table
+
+    rm -f ${prefix}.pileups.table.unsorted contig_order.tsv
     """
 
     stub:
