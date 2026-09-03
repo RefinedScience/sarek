@@ -47,6 +47,7 @@ workflow BAM_VARIANT_CALLING_SOMATIC_ALL {
     rt_file                       // channel: [optional]  ascat rt file
     joint_mutect2                 // boolean: [mandatory] [default: false] run mutect2 in joint mode
     wes                           // boolean: [mandatory] [default: false] whether targeted data is processed
+    mutect2_intervals             // channel: [mandatory] [ intervals, num_intervals ] or [ [], 0 ] if no intervals, sized independently for Mutect2
 
     main:
     // channels are often remapped to match module/subworkflow
@@ -227,7 +228,7 @@ workflow BAM_VARIANT_CALLING_SOMATIC_ALL {
             germline_resource_tbi,
             panel_of_normals,
             panel_of_normals_tbi,
-            intervals,
+            mutect2_intervals,
             joint_mutect2,
         )
 

@@ -94,6 +94,7 @@ workflow SAREK {
     intervals_bed_gz_tbi_and_num_intervals
     intervals_bed_gz_tbi_combined
     intervals_for_preprocessing
+    mutect2_intervals_and_num_intervals
     known_indels_vqsr
     known_sites_indels
     known_sites_indels_tbi
@@ -490,6 +491,7 @@ workflow SAREK {
             ascat_loci_rt,
             params.joint_mutect2,
             params.wes,
+            mutect2_intervals_and_num_intervals,
         )
 
         // QC on raw variant calls
