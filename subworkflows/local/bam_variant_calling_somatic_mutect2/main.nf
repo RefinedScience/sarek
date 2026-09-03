@@ -14,6 +14,46 @@ include { GATK4_MERGEMUTECTSTATS as MERGEMUTECTSTATS                   } from '.
 include { GATK4_MERGEVCFS as MERGE_MUTECT2                             } from '../../../modules/nf-core/gatk4/mergevcfs'
 include { GATK4_MUTECT2 as MUTECT2_PAIRED                              } from '../../../modules/nf-core/gatk4/mutect2'
 
+// GetPileupSummaries is scattered over the intervals emitted by PREPARE_INTERVALS, but those
+// intervals are ordered by estimated runtime (longest first, for load balancing), not by genomic
+// position. groupTuple() then reassembles per-interval results in task-completion order, which is
+// arbitrary. GatherPileupSummaries concatenates its --I list as given, with no re-sort, so the
+// merged table can come out with rows going backward in genomic position. CalculateContamination's
+// ContaminationSegmenter assumes sorted input and builds segments off consecutive rows, so a
+// backward jump produces a start>end interval and crashes.
+//
+// Fix: tag each interval's pileup with its own genomic start (read once, off the actual interval
+// BED handed to GetPileupSummaries) before scatter, then use it to sort tables back into genomic
+// order right before they're hitherto merged. The key is dropped again once the sort is done.
+def contigRank(String contig) {
+    def m = (contig =~ /^chr(\d+)$/)
+    if (m) {
+        return m[0][1] as Integer
+    }
+    if (contig in ['chrX', 'X']) {
+        return 1000
+    }
+    if (contig in ['chrY', 'Y']) {
+        return 1001
+    }
+    if (contig in ['chrM', 'chrMT', 'M', 'MT']) {
+        return 1002
+    }
+    return 1003 + contig.hashCode()
+}
+
+def intervalSortKey(intervalFile) {
+    if (!intervalFile || !intervalFile.exists()) {
+        return [0, 0L]
+    }
+    def firstLine = intervalFile.readLines().find { line -> line?.trim() && !line.startsWith('@') }
+    if (!firstLine) {
+        return [0, 0L]
+    }
+    def fields = firstLine.split('\t')
+    return [contigRank(fields[0]), fields[1] as Long]
+}
+
 workflow BAM_VARIANT_CALLING_SOMATIC_MUTECT2 {
     take:
     input                 // channel: [ meta, [ input ], [ input_index ] ]
@@ -131,9 +171,11 @@ workflow BAM_VARIANT_CALLING_SOMATIC_MUTECT2 {
     // Prepare input channel for normal pileup summaries.
     // Remember, the input channel contains tumor-normal pairs, so there will be multiple copies of the normal sample for each tumor for a given patient.
     // Therefore, we use unique function to generate normal pileup summaries once for each patient for better efficiency.
-    pileup_normal = pileup.normal.map { meta, cram, crai, intervals_ -> [meta - meta.subMap('tumor_id') + [id: meta.normal_id], cram, crai, intervals_] }.unique()
+    // interval_sort_key records each interval's genomic position so the scattered pileup tables can
+    // be put back in genomic order before GatherPileupSummaries merges them (see intervalSortKey above).
+    pileup_normal = pileup.normal.map { meta, cram, crai, intervals_ -> [meta - meta.subMap('tumor_id') + [id: meta.normal_id, interval_sort_key: intervalSortKey(intervals_)], cram, crai, intervals_] }.unique()
     // Prepare input channel for tumor pileup summaries.
-    pileup_tumor = pileup.tumor.map { meta, cram, crai, intervals_ -> [meta - meta.subMap('normal_id') + [id: meta.tumor_id], cram, crai, intervals_] }
+    pileup_tumor = pileup.tumor.map { meta, cram, crai, intervals_ -> [meta - meta.subMap('normal_id') + [id: meta.tumor_id, interval_sort_key: intervalSortKey(intervals_)], cram, crai, intervals_] }
 
     // Generate pileup summary tables using getepileupsummaries. tumor sample should always be passed in as the first input and input list entries of vcf_to_filter,
     GETPILEUPSUMMARIES_NORMAL(pileup_normal, fasta, fai, dict, germline_resource_pileup, germline_resource_pileup_tbi)
@@ -151,9 +193,19 @@ workflow BAM_VARIANT_CALLING_SOMATIC_MUTECT2 {
         no_intervals: meta.num_intervals <= 1
     }
 
-    // Only when using intervals
-    pileup_table_normal_to_merge = pileup_table_normal_branch.intervals.map { meta, table -> [groupKey(meta, meta.num_intervals), table] }.groupTuple()
-    pileup_table_tumor_to_merge = pileup_table_tumor_branch.intervals.map { meta, table -> [groupKey(meta, meta.num_intervals), table] }.groupTuple()
+    // Only when using intervals.
+    // groupKey is built off meta minus interval_sort_key, since that key differs per interval and
+    // would otherwise split each interval into its own group of one. After grouping, sort the
+    // [sort_key, table] pairs by sort_key to restore genomic order before handing the plain table
+    // list to GatherPileupSummaries, which concatenates its inputs in the order given.
+    pileup_table_normal_to_merge = pileup_table_normal_branch.intervals
+        .map { meta, table -> [groupKey(meta - meta.subMap('interval_sort_key'), meta.num_intervals), [meta.interval_sort_key, table]] }
+        .groupTuple()
+        .map { key, pairs -> [key, pairs.sort { a, b -> a[0] <=> b[0] }.collect { pair -> pair[1] }] }
+    pileup_table_tumor_to_merge = pileup_table_tumor_branch.intervals
+        .map { meta, table -> [groupKey(meta - meta.subMap('interval_sort_key'), meta.num_intervals), [meta.interval_sort_key, table]] }
+        .groupTuple()
+        .map { key, pairs -> [key, pairs.sort { a, b -> a[0] <=> b[0] }.collect { pair -> pair[1] }] }
 
     // Merge Pileup Summaries
     GATHERPILEUPSUMMARIES_NORMAL(pileup_table_normal_to_merge, dict.map { _meta, dict_ -> [dict_] })
@@ -161,8 +213,10 @@ workflow BAM_VARIANT_CALLING_SOMATIC_MUTECT2 {
 
     // Do some channel magic to generate tumor-normal pairs again.
     // This is necessary because we generated one normal pileup summary for each patient but we need run calculate contamination for each tumor-normal pair.
-    pileup_table_tumor = channel.empty().mix(GATHERPILEUPSUMMARIES_TUMOR.out.table, pileup_table_tumor_branch.no_intervals).map { meta, table -> [meta - meta.subMap('normal_id', 'tumor_id', 'num_intervals') + [id: meta.patient], meta.id, table] }
-    pileup_table_normal = channel.empty().mix(GATHERPILEUPSUMMARIES_NORMAL.out.table, pileup_table_normal_branch.no_intervals).map { meta, table -> [meta - meta.subMap('normal_id', 'tumor_id', 'num_intervals') + [id: meta.patient], meta.id, table] }
+    // Drop interval_sort_key from the no_intervals branch too, so meta shape matches the gathered
+    // branch's meta (built from groupKey above, which already excludes it) once mixed together.
+    pileup_table_tumor = channel.empty().mix(GATHERPILEUPSUMMARIES_TUMOR.out.table, pileup_table_tumor_branch.no_intervals.map { meta, table -> [meta - meta.subMap('interval_sort_key'), table] }).map { meta, table -> [meta - meta.subMap('normal_id', 'tumor_id', 'num_intervals') + [id: meta.patient], meta.id, table] }
+    pileup_table_normal = channel.empty().mix(GATHERPILEUPSUMMARIES_NORMAL.out.table, pileup_table_normal_branch.no_intervals.map { meta, table -> [meta - meta.subMap('interval_sort_key'), table] }).map { meta, table -> [meta - meta.subMap('normal_id', 'tumor_id', 'num_intervals') + [id: meta.patient], meta.id, table] }
 
     ch_calculatecontamination_in_tables = pileup_table_tumor
         .combine(
