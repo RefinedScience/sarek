@@ -201,11 +201,11 @@ workflow BAM_VARIANT_CALLING_SOMATIC_MUTECT2 {
     pileup_table_normal_to_merge = pileup_table_normal_branch.intervals
         .map { meta, table -> [groupKey(meta - meta.subMap('interval_sort_key'), meta.num_intervals), [meta.interval_sort_key, table]] }
         .groupTuple()
-        .map { key, pairs -> [key, pairs.sort { a, b -> a[0] <=> b[0] }.collect { pair -> pair[1] }] }
+        .map { key, pairs -> [key, pairs.sort { a, b -> (a[0][0] <=> b[0][0]) ?: (a[0][1] <=> b[0][1]) }.collect { pair -> pair[1] }] }
     pileup_table_tumor_to_merge = pileup_table_tumor_branch.intervals
         .map { meta, table -> [groupKey(meta - meta.subMap('interval_sort_key'), meta.num_intervals), [meta.interval_sort_key, table]] }
         .groupTuple()
-        .map { key, pairs -> [key, pairs.sort { a, b -> a[0] <=> b[0] }.collect { pair -> pair[1] }] }
+        .map { key, pairs -> [key, pairs.sort { a, b -> (a[0][0] <=> b[0][0]) ?: (a[0][1] <=> b[0][1]) }.collect { pair -> pair[1] }] }
 
     // Merge Pileup Summaries
     GATHERPILEUPSUMMARIES_NORMAL(pileup_table_normal_to_merge, dict.map { _meta, dict_ -> [dict_] })
