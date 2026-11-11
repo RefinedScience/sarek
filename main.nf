@@ -72,6 +72,7 @@ include { PIPELINE_COMPLETION              } from './subworkflows/local/utils_nf
 include { PIPELINE_INITIALISATION          } from './subworkflows/local/utils_nfcore_sarek_pipeline'
 include { PREPARE_GENOME                   } from './subworkflows/local/prepare_genome'
 include { PREPARE_INTERVALS                } from './subworkflows/local/prepare_intervals'
+include { PREPARE_INTERVALS as PREPARE_INTERVALS_MUTECT2 } from './subworkflows/local/prepare_intervals'
 include { PREPARE_REFERENCE_CNVKIT         } from './subworkflows/local/prepare_reference_cnvkit'
 include { PREPARE_SNPSIFT_DATABASES        } from './subworkflows/local/prepare_snpsift_databases'
 include { CACHE_DOWNLOAD_ENSEMBLVEP_SNPEFF } from './subworkflows/nf-core/cache_download_ensemblvep_snpeff'
@@ -128,6 +129,14 @@ workflow NFCORE_SAREK {
     // Build intervals if needed
     PREPARE_INTERVALS(PREPARE_GENOME.out.fasta_fai, params.intervals, params.no_intervals, params.nucleotides_per_second, params.outdir, params.step)
 
+    // Mutect2 gets its own interval scatter, independently sized via mutect2_nucleotides_per_second.
+    // Mutect2 tasks are much slower per-nucleotide than BQSR/other callers, so the granularity that
+    // keeps BQSR's per-chunk overhead low is often too coarse for Mutect2 (30h+ tasks/timeouts), but
+    // the granularity that keeps Mutect2 chunks fast is too fine for everything else (excess Google
+    // Batch VM boot overhead). Splitting this into a second PREPARE_INTERVALS call lets each be tuned
+    // independently without perturbing the other's resume cache.
+    PREPARE_INTERVALS_MUTECT2(PREPARE_GENOME.out.fasta_fai, params.intervals, params.no_intervals, params.mutect2_nucleotides_per_second ?: params.nucleotides_per_second, params.outdir, params.step)
+
     // Intervals for speed up preprocessing/variant calling by spread/gather
     // [interval.bed] all intervals in one file
     intervals_bed_combined = params.no_intervals ? channel.value([]) : PREPARE_INTERVALS.out.intervals_bed_combined
@@ -144,6 +153,12 @@ workflow NFCORE_SAREK {
     intervals_bed_gz_tbi = PREPARE_INTERVALS.out.intervals_bed_gz_tbi
 
     intervals_and_num_intervals = intervals.map { file, num_intervals ->
+        [num_intervals < 1 ? [] : file, num_intervals]
+    }
+
+    // [ interval, num_intervals ] Mutect2-only scatter, sized by mutect2_nucleotides_per_second
+    mutect2_intervals = PREPARE_INTERVALS_MUTECT2.out.intervals_bed
+    mutect2_intervals_and_num_intervals = mutect2_intervals.map { file, num_intervals ->
         [num_intervals < 1 ? [] : file, num_intervals]
     }
 
@@ -303,6 +318,7 @@ workflow NFCORE_SAREK {
         intervals_bed_gz_tbi_and_num_intervals,
         intervals_bed_gz_tbi_combined,
         intervals_for_preprocessing,
+        mutect2_intervals_and_num_intervals,
         params.known_indels_vqsr ? channel.value(params.known_indels_vqsr) : channel.empty(),
         PREPARE_GENOME.out.known_sites_indels,
         PREPARE_GENOME.out.known_sites_indels_tbi,
@@ -321,9 +337,9 @@ workflow NFCORE_SAREK {
         params.varlociraptor_events_somatic,
         params.varlociraptor_events_tumor_only,
         params.varlociraptor_fdr,
-        params.varlociraptor_scenario_germline ? channel.fromPath(params.varlociraptor_scenario_germline).map { scenario -> [[id: scenario.baseName - '.yte'], scenario] }.collect() : channel.fromPath("${projectDir}/assets/varlociraptor_germline.yte.yaml").collect(),
-        params.varlociraptor_scenario_somatic ? channel.fromPath(params.varlociraptor_scenario_somatic).map { scenario -> [[id: scenario.baseName - '.yte'], scenario] }.collect() : channel.fromPath("${projectDir}/assets/varlociraptor_somatic.yte.yaml").collect(),
-        params.varlociraptor_scenario_tumor_only ? channel.fromPath(params.varlociraptor_scenario_tumor_only).map { scenario -> [[id: scenario.baseName - '.yte'], scenario] }.collect() : channel.fromPath("${projectDir}/assets/varlociraptor_tumor_only.yte.yaml").collect(),
+        params.varlociraptor_scenario_germline ? channel.fromPath(params.varlociraptor_scenario_germline).collect() : channel.fromPath("${projectDir}/assets/varlociraptor_germline.yte.yaml").collect(),
+        params.varlociraptor_scenario_somatic ? channel.fromPath(params.varlociraptor_scenario_somatic).collect() : channel.fromPath("${projectDir}/assets/varlociraptor_somatic.yte.yaml").collect(),
+        params.varlociraptor_scenario_tumor_only ? channel.fromPath(params.varlociraptor_scenario_tumor_only).collect() : channel.fromPath("${projectDir}/assets/varlociraptor_tumor_only.yte.yaml").collect(),
         snpeff_cache,
         params.snpeff_db,
         vep_cache,
@@ -354,12 +370,13 @@ workflow {
     PIPELINE_INITIALISATION(
         params.version,
         params.validate_params,
+        params.monochrome_logs,
         args,
         params.outdir,
         params.input,
         params.help,
         params.help_full,
-        params.show_hidden
+        params.show_hidden,
     )
 
     //
@@ -376,7 +393,7 @@ workflow {
         params.plaintext_email,
         params.outdir,
         params.monochrome_logs,
-        NFCORE_SAREK.out.multiqc_report
+        NFCORE_SAREK.out.multiqc_report,
     )
 
     publish:
