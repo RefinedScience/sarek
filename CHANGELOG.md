@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.11.0 (internal additions explained)
+
+### Added
+
+- Add `--mutect2_nucleotides_per_second` to size the interval scatter of Mutect2, GetPileupSummaries and CalculateContamination independently of `--nucleotides_per_second`. Falls back to `--nucleotides_per_second` if unset. Needed since Mutect2 doesn't originally split the interval size and can therefore take up to 30 hours for a single-sample otherwise. 
+
+### Fixed
+
+- Re-sort the merged `GATK4_GATHERPILEUPSUMMARIES` table by sequence dictionary contig order and position, so scattered pileup tables merged out of genomic order no longer crash `CalculateContamination` with "Invalid interval". Note: The next (unreleased 3.12.0) iteration of nf-sarek is supposed to fix this, along with adding multiple other factors.
+
+### Parameters
+
+| Params                             | status |
+| ---------------------------------- | ------ |
+| `--mutect2_nucleotides_per_second` | New    |
+
 ## [3.11.0](https://github.com/nf-core/sarek/releases/tag/3.11.0) - Guhkesvákkjåhkå
 
 Guhkesvákkjåhkå is a big stream in Sarek. You can cross it via suspension bridge.
