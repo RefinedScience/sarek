@@ -264,7 +264,8 @@
                     "gatk4/gatherpileupsummaries": {
                         "branch": "master",
                         "git_sha": "b2bcd8312599aacd849e69721e20ac8138018f83",
-                        "installed_by": ["modules"]
+                        "installed_by": ["modules"],
+                        "patch": "modules/nf-core/gatk4/gatherpileupsummaries/gatk4-gatherpileupsummaries.diff"
                     },
                     "gatk4/genomicsdbimport": {
                         "branch": "master",

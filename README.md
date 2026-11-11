@@ -205,7 +205,7 @@ We thank the following people for their extensive assistance in the development 
 
 ## Contributions & Support
 
-If you would like to contribute to this pipeline, please see the [contributing guidelines](docs/CONTRIBUTING.md).
+If you would like to contribute to this pipeline, please see the [contributing guidelines](.github/CONTRIBUTING.md).
 
 For further information or help, don't hesitate to get in touch on the [Slack `#sarek` channel](https://nfcore.slack.com/channels/sarek), or contact the dev team on the [Slack `#sarek_dev` channel](https://nfcore.slack.com/channels/sarek_dev). (you can join with [this invite](https://nf-co.re/join/slack)).
 

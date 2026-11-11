@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add `--mutect2_nucleotides_per_second` to size the interval scatter of Mutect2, GetPileupSummaries and CalculateContamination independently of `--nucleotides_per_second`. Falls back to `--nucleotides_per_second` if unset. Needed since Mutect2 doesn't originally split the interval size and can therefore take up to 30 hours for a single-sample otherwise. 
+- Add `--mutect2_nucleotides_per_second` to size the interval scatter of Mutect2, GetPileupSummaries and CalculateContamination independently of `--nucleotides_per_second`. Falls back to `--nucleotides_per_second` if unset. Needed since Mutect2 doesn't originally split the interval size and can therefore take up to 30 hours for a single-sample otherwise.
 
 ### Fixed
 
