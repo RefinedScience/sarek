@@ -155,4 +155,4 @@ runs:
       if: always()
       shell: bash
       run: |
-        sudo rm -rf /home/ubuntu/tests/
+        sudo rm -rf "$HOME/tests/"
