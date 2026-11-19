@@ -135,7 +135,12 @@ workflow NFCORE_SAREK {
     // the granularity that keeps Mutect2 chunks fast is too fine for everything else (excess Google
     // Batch VM boot overhead). Splitting this into a second PREPARE_INTERVALS call lets each be tuned
     // independently without perturbing the other's resume cache.
-    PREPARE_INTERVALS_MUTECT2(PREPARE_GENOME.out.fasta_fai, params.intervals, params.no_intervals, params.mutect2_nucleotides_per_second ?: params.nucleotides_per_second, params.outdir, params.step)
+    // Only run the second scatter when it differs from the default one; otherwise reuse the default
+    // intervals so no duplicate interval tasks are created.
+    separate_mutect2_intervals = params.mutect2_nucleotides_per_second && params.mutect2_nucleotides_per_second != params.nucleotides_per_second
+    if (separate_mutect2_intervals) {
+        PREPARE_INTERVALS_MUTECT2(PREPARE_GENOME.out.fasta_fai, params.intervals, params.no_intervals, params.mutect2_nucleotides_per_second, params.outdir, params.step)
+    }
 
     // Intervals for speed up preprocessing/variant calling by spread/gather
     // [interval.bed] all intervals in one file
@@ -157,7 +162,7 @@ workflow NFCORE_SAREK {
     }
 
     // [ interval, num_intervals ] Mutect2-only scatter, sized by mutect2_nucleotides_per_second
-    mutect2_intervals = PREPARE_INTERVALS_MUTECT2.out.intervals_bed
+    mutect2_intervals = separate_mutect2_intervals ? PREPARE_INTERVALS_MUTECT2.out.intervals_bed : intervals
     mutect2_intervals_and_num_intervals = mutect2_intervals.map { file, num_intervals ->
         [num_intervals < 1 ? [] : file, num_intervals]
     }
