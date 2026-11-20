@@ -78,4 +78,64 @@ nextflow_pipeline {
     test_scenario.each { scenario ->
         test(scenario.name, UTILS.getTest(scenario))
     }
+
+    // RS1: --cnvkit_baits must only affect CNVkit. Mutect2 must keep scattering over --intervals.
+    // annotated.bed (the baits) spans chr21:5011195-5040625, whereas multi_intervals.bed covers most of chr21,
+    // so if Mutect2 wrongly used the baits, no interval chunk would extend beyond the bait span.
+    test("-profile test --tools cnvkit,mutect2 somatic --cnvkit_baits annotated.bed: mutect2 still uses --intervals") {
+        tag "pipeline"
+        tag "pipeline_sarek"
+        tag "cpu_conda"
+        tag "cnvkit_baits_mutect2"
+
+        when {
+            params {
+                outdir = "${outputDir}"
+                genome = null
+                igenomes_ignore = true
+                dbsnp = modules_testdata_base_path + 'genomics/homo_sapiens/genome/chr21/germlineresources/dbsnp_138.hg38.vcf.gz'
+                dbsnp_tbi = modules_testdata_base_path + 'genomics/homo_sapiens/genome/chr21/germlineresources/dbsnp_138.hg38.vcf.gz.tbi'
+                fasta = modules_testdata_base_path + 'genomics/homo_sapiens/genome/chr21/sequence/genome.fasta'
+                fasta_fai = modules_testdata_base_path + 'genomics/homo_sapiens/genome/chr21/sequence/genome.fasta.fai'
+                input = "${projectDir}/tests/csv/3.0/recalibrated_somatic.csv"
+                intervals = modules_testdata_base_path + 'genomics/homo_sapiens/genome/chr21/sequence/multi_intervals.bed'
+                cnvkit_baits = modules_testdata_base_path + 'genomics/homo_sapiens/genome/chr21/sequence/annotated.bed'
+                step = "variant_calling"
+                tools = 'cnvkit,mutect2'
+                wes = true
+            }
+        }
+
+        then {
+            assert workflow.success
+
+            // CNVkit used the baits
+            def cnn_files = []
+            new File("${outputDir}/variant_calling/cnvkit").eachFileRecurse { f ->
+                if (f.name.endsWith('.targetcoverage.cnn')) cnn_files << f
+            }
+            assert cnn_files : "CNVkit did not run"
+
+            // Mutect2 used --intervals: at least one interval chunk handed to a Mutect2 task extends beyond the baits
+            def mutect2_scripts = []
+            new File("${workDir}").eachFileRecurse { f ->
+                if (f.name == '.command.sh' && f.text.contains('Mutect2') && f.text.contains('--intervals')) mutect2_scripts << f
+            }
+            assert mutect2_scripts : "No Mutect2 task scripts found in ${workDir}"
+            def beyond_baits = false
+            mutect2_scripts.each { script ->
+                def matcher = script.text =~ /--intervals\s+(\S+)/
+                if (matcher.find()) {
+                    def bed = new File(script.parentFile, matcher.group(1))
+                    if (bed.exists()) {
+                        bed.readLines().each { line ->
+                            def cols = line.split('\t')
+                            if (cols.size() > 2 && ((cols[1] as long) < 5011195 || (cols[2] as long) > 5040625)) beyond_baits = true
+                        }
+                    }
+                }
+            }
+            assert beyond_baits : "All MUTECT2 interval chunks lie inside the CNVkit baits: --intervals was not used for Mutect2"
+        }
+    }
 }

@@ -438,6 +438,14 @@
                     "description": "Overwrite Control-FREEC window size.",
                     "help_text": "Details, see [ControlFREEC manual](http://boevalab.inf.ethz.ch/FREEC/tutorial.html)."
                 },
+                "cnvkit_baits": {
+                    "type": "string",
+                    "fa_icon": "fas fa-file",
+                    "format": "file-path",
+                    "pattern": "^\\S+\\.bed$",
+                    "description": "Bait/probe BED file for CNVkit (RS1 addition)",
+                    "help_text": "BED file of the **baited/probed** regions of your capture kit, unpadded, exactly as provided by the kit vendor. It is passed to CNVkit as `--targets`, but CNVkit's own documentation says this file must be the bait coordinates, not the target regions (see the `target` command at https://cnvkit.readthedocs.io/en/stable/pipeline.html: \"The BED file should be the baited genomic regions for your target capture kit, as provided by your vendor\"). This is why the parameter is called `cnvkit_baits`.\n\nWhen not set, CNVkit uses the file given to `--intervals` (previous behaviour). All other tools, including Mutect2, always keep using `--intervals`.\n\nIgnored when `--cnvkit_reference` is supplied, since a CNVkit reference already contains its bins."
+                },
                 "cnvkit_reference": {
                     "type": "string",
                     "fa_icon": "fas fa-file",

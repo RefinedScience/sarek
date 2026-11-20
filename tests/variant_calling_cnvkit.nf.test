@@ -79,4 +79,62 @@ nextflow_pipeline {
     test_scenario.each { scenario ->
         test(scenario.name, UTILS.getTest(scenario))
     }
+
+    // RS1: --cnvkit_baits must be what CNVkit uses as its targets, while --intervals stays for other tools.
+    // The bait BED (annotated.bed) is 14 small regions spanning chr21:5011195-5040625, all inside multi_intervals.bed,
+    // so if CNVkit wrongly used --intervals, target bins would span far outside the baits. (small.bed is too small: a
+    // single bin makes CNVkit stop before writing a .cnr.) Antitarget (off-target) bins are in separate files.
+    def bait_scenarios = [
+        [name: "germline", csv: "recalibrated_germline.csv"],
+        [name: "somatic", csv: "recalibrated_somatic.csv"],
+        [name: "tumor-only", csv: "recalibrated_tumoronly.csv"]
+    ]
+
+    bait_scenarios.each { scenario ->
+        test("-profile test --tools cnvkit --cnvkit_baits annotated.bed (${scenario.name}) bins limited to baits") {
+            tag "pipeline"
+            tag "pipeline_sarek"
+            tag "cpu_conda"
+            tag "cnvkit_baits"
+
+            when {
+                params {
+                    outdir = "${outputDir}"
+                    fasta = modules_testdata_base_path + 'genomics/homo_sapiens/genome/chr21/sequence/genome.fasta'
+                    fasta_fai = modules_testdata_base_path + 'genomics/homo_sapiens/genome/chr21/sequence/genome.fasta.fai'
+                    intervals = modules_testdata_base_path + 'genomics/homo_sapiens/genome/chr21/sequence/multi_intervals.bed'
+                    cnvkit_baits = modules_testdata_base_path + 'genomics/homo_sapiens/genome/chr21/sequence/annotated.bed'
+                    input = "${projectDir}/tests/csv/3.0/${scenario.csv}"
+                    step = "variant_calling"
+                    tools = 'cnvkit'
+                }
+            }
+
+            then {
+                assert workflow.success
+
+                // annotated.bed spans chr21:5011195-5040625
+                def bait_start = 5011195
+                def bait_end = 5040625
+
+                // *.targetcoverage.cnn is written in every mode (germline, somatic, tumor-only) and holds the raw
+                // target bins. (.cnr is not used: with this tiny test data CNVkit can stop before writing it.)
+                def target_files = []
+                new File("${outputDir}/variant_calling/cnvkit").eachFileRecurse { f ->
+                    if (f.name.endsWith('.targetcoverage.cnn')) target_files << f
+                }
+                assert target_files : "No .targetcoverage.cnn files found in ${outputDir}/variant_calling/cnvkit"
+
+                target_files.each { cnn ->
+                    def bins = cnn.readLines().drop(1).collect { it.split('\t') }.findAll { it.size() > 2 }
+                    assert bins : "No target bins in ${cnn.name}: baits were not used as CNVkit targets"
+                    bins.each { cols ->
+                        assert cols[0] == 'chr21'
+                        assert (cols[1] as long) >= bait_start && (cols[2] as long) <= bait_end :
+                            "Target bin ${cols[0]}:${cols[1]}-${cols[2]} in ${cnn.name} lies outside the bait region"
+                    }
+                }
+            }
+        }
+    }
 }

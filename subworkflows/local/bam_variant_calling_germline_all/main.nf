@@ -52,6 +52,7 @@ workflow BAM_VARIANT_CALLING_GERMLINE_ALL {
     sentieon_dnascope_emit_mode       // channel: [mandatory] value channel with string
     sentieon_dnascope_pcr_indel_model // channel: [mandatory] value channel with string
     sentieon_dnascope_model           // channel: [mandatory] value channel with string
+    cnvkit_baits                      // channel: [mandatory] bait/probe BED for CNVkit (falls back to intervals_bed_combined)
 
     main:
     //TODO: Temporary until the if's can be removed and printing to terminal is prevented with "when" in the modules.config
@@ -111,7 +112,7 @@ workflow BAM_VARIANT_CALLING_GERMLINE_ALL {
             bam.map{ meta, bam_, _bai -> [ meta, [], bam_ ] },
             fasta,
             fasta_fai,
-            intervals_bed_combined.map{_intervals -> _intervals ? [[id:_intervals[0].baseName], _intervals]: [[id:'no_intervals'], []]},
+            cnvkit_baits.map{_baits -> _baits ? [[id:_baits[0].baseName], _baits]: [[id:'no_intervals'], []]},
             params.cnvkit_reference ? cnvkit_reference.map{ reference -> [[id:reference[0].baseName], reference] } : [[:],[]]
         )
     }
