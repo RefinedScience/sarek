@@ -1474,6 +1474,20 @@ For targeted data analysis, this is overshooting by a lot. In this case resource
 The CNV calling in Sarek implements the approach proposed by [CNVkit](https://cnvkit.readthedocs.io/en/stable/).
 It is possible to call CNVs with whole-genome or targeted capture data (exome and amplicons): depending on the sequencing approach, Sarek applies different [settings](https://cnvkit.readthedocs.io/en/stable/nonhybrid.html) as recommended by CNVkit.
 
+### Bait/probe BED (`--cnvkit_baits`)
+
+Mutect2 and the other callers work best with the **target** regions (usually padded) given to `--intervals`, whereas CNVkit needs the **bait/probe** regions of the capture kit. Use `--cnvkit_baits <baits.bed>` to give CNVkit its own BED while everything else keeps using `--intervals`:
+
+```bash
+nextflow run . --input samplesheet.csv --tools cnvkit,mutect2 --wes \
+    --intervals padded_targets.bed --cnvkit_baits baits.bed
+```
+
+- Sarek passes this file to CNVkit as `--targets`, and uses it to build the flat reference when no `--cnvkit_reference` is given. The CNVkit documentation calls this argument "targets" but states that the file must contain the baited regions: _"The BED file should be the baited genomic regions for your target capture kit, as provided by your vendor"_ ([CNVkit pipeline documentation, `target` command](https://cnvkit.readthedocs.io/en/stable/pipeline.html)). The parameter is called `cnvkit_baits` to make this clear.
+- Provide the baits **unpadded**, as supplied by the vendor. Note: the CNVkit documentation does not explicitly discuss padding, this recommendation follows from its instruction to use the vendor-provided bait coordinates as-is.
+- If `--cnvkit_baits` is not set, CNVkit uses `--intervals`, exactly as in earlier versions.
+- If `--cnvkit_reference` is provided, the reference already contains its bins and `--cnvkit_baits` is not used for the CNVkit run.
+
 ### Reference background
 
 Given the nature of this type of CNV calling algorithms, which rely on the detection of variations in the coverage profile, the definition of a background reference in control data is known to improve the calling in targeted and hybrid capture applications. This is to ensure an accurate profiling, especially in the off-target regions.

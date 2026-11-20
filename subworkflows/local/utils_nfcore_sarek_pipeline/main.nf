@@ -113,6 +113,7 @@ workflow PIPELINE_INITIALISATION {
         params.bcftools_header_lines,
         params.cf_chrom_len,
         params.chr_dir,
+        params.cnvkit_baits,
         params.cnvkit_reference,
         params.dbnsfp,
         params.dbnsfp_tbi,

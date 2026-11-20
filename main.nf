@@ -171,12 +171,15 @@ workflow NFCORE_SAREK {
         [num_intervals < 1 ? [] : file[0], num_intervals < 1 ? [] : file[1], num_intervals]
     }
 
+    // RS1: CNVkit reads its own bait/probe BED (--cnvkit_baits); falls back to --intervals when unset
+    cnvkit_baits_bed = params.cnvkit_baits ? channel.fromPath(params.cnvkit_baits).collect() : intervals_bed_combined
+
     if (params.tools && params.tools.split(',').contains('cnvkit')) {
         if (params.cnvkit_reference) {
             cnvkit_reference = channel.fromPath(params.cnvkit_reference).collect()
         }
         else {
-            PREPARE_REFERENCE_CNVKIT(PREPARE_GENOME.out.fasta, intervals_bed_combined)
+            PREPARE_REFERENCE_CNVKIT(PREPARE_GENOME.out.fasta, cnvkit_baits_bed)
             cnvkit_reference = PREPARE_REFERENCE_CNVKIT.out.cnvkit_reference
         }
     }
@@ -307,6 +310,7 @@ workflow NFCORE_SAREK {
         params.bcftools_header_lines ? channel.fromPath(params.bcftools_header_lines).collect() : channel.empty(),
         params.cf_chrom_len ? channel.fromPath(params.cf_chrom_len).collect() : [],
         PREPARE_GENOME.out.chr_dir,
+        cnvkit_baits_bed,
         cnvkit_reference,
         PREPARE_GENOME.out.dbsnp,
         PREPARE_GENOME.out.dbsnp_tbi,

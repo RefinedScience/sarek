@@ -50,6 +50,7 @@ workflow BAM_VARIANT_CALLING_SOMATIC_ALL {
     joint_mutect2                 // boolean: [mandatory] [default: false] run mutect2 in joint mode
     wes                           // boolean: [mandatory] [default: false] whether targeted data is processed
     mutect2_intervals             // channel: [mandatory] [ intervals, num_intervals ] or [ [], 0 ] if no intervals, sized independently for Mutect2
+    cnvkit_baits                  // channel: [mandatory] bait/probe BED for CNVkit (falls back to intervals_bed_combined)
 
     main:
     // channels are often remapped to match module/subworkflow
@@ -129,7 +130,7 @@ workflow BAM_VARIANT_CALLING_SOMATIC_ALL {
             bam.map { meta, normal_bam, _normal_bai, tumor_bam, _tumor_bai -> [meta, tumor_bam, normal_bam] },
             fasta,
             fasta_fai,
-            intervals_bed_combined.map { _intervals -> _intervals ? [[id: _intervals[0].baseName], _intervals] : [[id: 'no_intervals'], []] },
+            cnvkit_baits.map { _baits -> _baits ? [[id: _baits[0].baseName], _baits] : [[id: 'no_intervals'], []] },
             [[id: "null"], []],
         )
     }
