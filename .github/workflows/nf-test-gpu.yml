@@ -31,6 +31,7 @@ env:
 jobs:
   nf-test-gpu-changes:
     name: nf-test-gpu-changes
+    if: github.repository == 'nf-core/sarek' # needs RunsOn runners/secrets only available on nf-core/sarek
     runs-on: # use self-hosted runners
       - runs-on=${{ github.run_id }}-nf-test-gpu-changes
       - runner=4cpu-linux-x64
@@ -66,7 +67,7 @@ jobs:
   nf-test-gpu:
     name: "GPU | ${{ matrix.profile }} | ${{ matrix.NXF_VER }} | ${{ matrix.shard }}/${{ needs.nf-test-gpu-changes.outputs.total_shards }}"
     needs: [nf-test-gpu-changes]
-    if: ${{ needs.nf-test-gpu-changes.outputs.total_shards != '0' }}
+    if: ${{ github.repository == 'nf-core/sarek' && needs.nf-test-gpu-changes.outputs.total_shards != '0' }}
     runs-on: "runs-on=${{ github.run_id }}/family=g4dn.xlarge/image=ubuntu24-gpu-x64"
     strategy:
       fail-fast: false
@@ -131,7 +132,7 @@ jobs:
           fi
   confirm-pass:
     needs: [nf-test-gpu]
-    if: always()
+    if: ${{ always() && github.repository == 'nf-core/sarek' }}
     runs-on: # use self-hosted runners
       - runs-on=${{ github.run_id }}-confirm-pass
       - runner=2cpu-linux-x64

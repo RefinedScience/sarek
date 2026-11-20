@@ -17,11 +17,13 @@ class UTILS {
             "Check script",
             "Creating env using",
             "Downloading plugin",
+            "Error streaming",
             "Got an interrupted exception while taking agent result",
             "Pulling Singularity image",
             "Staging foreign file",
             "Unable to resume cached task",
             "Unable to stage foreign file",
+            "WARN: null",
         ]
 
         // stable_name: All files + folders in ${outdir}/ with a stable name

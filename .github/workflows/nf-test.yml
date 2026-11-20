@@ -32,9 +32,7 @@ env:
 jobs:
   nf-test-changes:
     name: nf-test-changes
-    runs-on: # use self-hosted runners
-      - runs-on=${{ github.run_id }}-nf-test-changes
-      - runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     outputs:
       shard: ${{ steps.set-shards.outputs.shard }}
       total_shards: ${{ steps.set-shards.outputs.total_shards }}
@@ -68,23 +66,13 @@ jobs:
     name: "${{ matrix.profile }} | ${{ matrix.NXF_VER }} | ${{ matrix.shard }}/${{ needs.nf-test-changes.outputs.total_shards }}"
     needs: [nf-test-changes]
     if: ${{ needs.nf-test-changes.outputs.total_shards != '0' }}
-    runs-on: # use self-hosted runners
-      - runs-on=${{ github.run_id }}-nf-test
-      - runner=4cpu-linux-x64
-      - volume=80gb
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         shard: ${{ fromJson(needs.nf-test-changes.outputs.shard) }}
-        profile: [conda, docker, singularity]
-        isMain:
-          - ${{ github.base_ref == 'master' || github.base_ref == 'main' }}
-        # Exclude conda and singularity on dev
-        exclude:
-          - isMain: false
-            profile: "conda"
-          - isMain: false
-            profile: "singularity"
+        # Only the docker profile runs in this fork, regardless of the target branch
+        profile: [docker]
         NXF_VER:
           - "25.10.4"
           - "latest-everything"
@@ -93,6 +81,15 @@ jobs:
       TOTAL_SHARDS: ${{ needs.nf-test-changes.outputs.total_shards }}
 
     steps:
+      # GitHub-hosted runners have far less free disk than the 80GB RunsOn volume this
+      # workflow was written for. Remove large preinstalled toolchains we never use.
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune --all --force || true
+          df -h /
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
@@ -145,9 +142,7 @@ jobs:
   confirm-pass:
     needs: [nf-test]
     if: always()
-    runs-on: # use self-hosted runners
-      - runs-on=${{ github.run_id }}-confirm-pass
-      - runner=2cpu-linux-x64
+    runs-on: ubuntu-latest
     steps:
       - name: One or more tests failed (excluding latest-everything)
         if: ${{ contains(needs.*.result, 'failure') }}
